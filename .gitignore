@@ -1,0 +1,103 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+build/
+out/
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Runtime data
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor directories and files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ONNX model files (large binary files)
+*.onnx
+*.ort
+
+# Temporary files
+tmp/
+temp/
+
+# Coverage directory
+coverage/
+.nyc_output
+
+# Optional npm cache directory
+.npm
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# Parcel bundles
+.cache/
+.parcel-cache
+
+# Next.js build output
+.next/
+
+# Nuxt.js build/output
+.nuxt/
+
+# Vuepress docs
+.docs/
+
+# Serverless directories
+.serverless/
+
+# Firebase directories
+.firebase/
+
+# Client build
+client/dist/
+client/build/
+
+# Server build
+server/dist/
+
+# Log files
+logs/
+*.log
+
+# Models directory contents (but keep directory)
+# server/models/*.onnx
+# server/models/*.ort
+
+# IDE specific
+*.code-workspace
+
+# Local development
+*.local
+
+# Cache directories
+.cache/
+.cache*

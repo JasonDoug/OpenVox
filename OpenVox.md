@@ -1,0 +1,1 @@
+OpenVox should be the web application and opersource version of Supervox, described in the other two documents. Basically, OpenVox should contain the core/opensource version of Supervox. Should be a web application not a native mobile app. Should connect to bluetooth microphones but not have the more extensive features described in the SuperVox document.
