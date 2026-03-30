@@ -164,6 +164,10 @@ For production use, you need to provide ONNX models for audio processing. The sy
 
 Place model files in `server/models/` and update the model loading code in `audioProcessor.ts`.
 
+## Development
+
+For detailed information about the initial development phase, decisions made, and architecture choices, see the [Development Log](docs/DEVELOPMENT_LOG.md).
+
 ## Contributing
 
 Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
