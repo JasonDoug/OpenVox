@@ -189,3 +189,76 @@ npm start
 3. **Multi-microphone Support** - Beamforming with external mics
 4. **Speaker Identification** - Voice fingerprinting
 5. **Cloud Inference** - Optional heavy model processing
+
+## Architecture Diagrams
+
+### System Data Flow
+
+```mermaid
+graph TD
+    A[User's Browser] -->|Audio Capture| B[Web Audio API]
+    B -->|Raw Audio Chunks| C[WebSocket Client]
+    C -->|Audio Stream| D[WebSocket Server]
+    D -->|Audio Data| E[AudioProcessor]
+    E -->|Inference Request| F[ONNX Runtime]
+    F -->|Model Inference| G[ML Models]
+    G -->|Processed Audio| F
+    F -->|Enhanced Audio| E
+    E -->|Processed Audio| D
+    D -->|Audio Stream| C
+    C -->|Audio Chunks| H[Audio Playback]
+    I[User Controls] -->|Configuration| A
+    A -->|Config Message| C
+    C -->|Config| D
+    D -->|Config| E
+```
+
+### Component Interaction
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Browser
+    participant Server
+    participant AudioProcessor
+    participant ONNXModel
+
+    User->>Browser: Click "Start Microphone"
+    Browser->>Browser: Request microphone access
+    Browser->>User: Microphone permission granted
+    User->>Browser: Click "Start Processing"
+    Browser->>Server: WebSocket connection
+    Server->>AudioProcessor: Create new instance
+    loop Real-time Audio
+        Browser->>Server: Audio chunk via WebSocket
+        Server->>AudioProcessor: Process audio
+        AudioProcessor->>ONNXModel: Run inference
+        ONNXModel-->>AudioProcessor: Processed audio
+        AudioProcessor-->>Server: Enhanced audio
+        Server-->>Browser: Processed audio chunk
+        Browser->>Browser: Play enhanced audio
+    end
+    User->>Browser: Adjust focus strength
+    Browser->>Server: Config update
+    Server->>AudioProcessor: Update settings
+```
+
+### Audio Processing Pipeline
+
+```mermaid
+graph LR
+    A[Microphone Input] --> B[Audio Capture]
+    B --> C[Chunking]
+    C --> D[WebSocket Transmission]
+    D --> E[Server Reception]
+    E --> F[Preprocessing]
+    F --> G[ONNX Inference]
+    G --> H[Postprocessing]
+    H --> I[Focus Adjustment]
+    I --> J[WebSocket Response]
+    J --> K[Client Playback]
+    
+    style A fill:#e1f5fe
+    style K fill:#e1f5fe
+    style G fill:#f3e5f5
+```
