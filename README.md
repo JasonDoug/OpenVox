@@ -1,5 +1,10 @@
 # OpenVox - Real-time Sound Isolation Web Application
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![GitHub stars](https://img.shields.io/github/stars/JasonDoug/OpenVox)](https://github.com/JasonDoug/OpenVox/stargazers)
+[![GitHub issues](https://img.shields.io/github/issues/JasonDoug/OpenVox)](https://github.com/JasonDoug/OpenVox/issues)
+[![GitHub pull requests](https://img.shields.io/github/issues-pr/JasonDoug/OpenVox)](https://github.com/JasonDoug/OpenVox/pulls)
+
 OpenVox is an open-source web application that provides real-time sound isolation and enhancement using AI. It allows users to focus on specific audio sources (like a voice in a noisy environment) while suppressing background noise. The application runs as a hybrid system with client-side audio capture and server-side AI processing.
 
 ## Overview
@@ -13,6 +18,23 @@ Based on the commercial Supervox application, OpenVox aims to provide core sound
 - Bluetooth microphone support
 - On-device and cloud processing options
 - Privacy-first design (audio processed locally when possible)
+
+## Quick Start
+
+```bash
+# Clone the repository
+git clone https://github.com/JasonDoug/OpenVox.git
+cd OpenVox
+
+# Install dependencies
+npm install
+
+# Start development servers (in two terminals)
+npm run dev:server  # Terminal 1: Server on port 4000
+npm run dev:client  # Terminal 2: Client on port 3000
+```
+
+Open http://localhost:3000 in your browser and click "Start Microphone" to begin.
 
 ## Architecture
 
