@@ -166,7 +166,11 @@ Place model files in `server/models/` and update the model loading code in `audi
 
 ## Development
 
+### Initial Phase
 For detailed information about the initial development phase, decisions made, and architecture choices, see the [Development Log](docs/DEVELOPMENT_LOG.md).
+
+### Next Phase
+For the upcoming development plan focusing on real audio processing and enhanced UI, see the [Next Phase Plan](docs/NEXT_PHASE.md).
 
 ## Contributing
 
