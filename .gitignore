@@ -87,6 +87,11 @@ server/dist/
 # Log files
 logs/
 *.log
+server.log
+client.log
+
+# PID files for development servers
+.pids/
 
 # Models directory contents (but keep directory)
 # server/models/*.onnx

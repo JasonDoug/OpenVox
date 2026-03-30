@@ -21,6 +21,8 @@ Based on the commercial Supervox application, OpenVox aims to provide core sound
 
 ## Quick Start
 
+### Using Helper Scripts (Recommended)
+
 ```bash
 # Clone the repository
 git clone https://github.com/JasonDoug/OpenVox.git
@@ -29,7 +31,23 @@ cd OpenVox
 # Install dependencies
 npm install
 
-# Start development servers (in two terminals)
+# Start both servers with one command
+./start.sh
+
+# Later, stop both servers with one command
+./stop.sh
+```
+
+The scripts will automatically:
+- Find available ports (starting from 3000/4000)
+- Kill any existing servers
+- Start both client and server in the background
+- Save PID files for easy stopping
+
+### Manual Start (Alternative)
+
+```bash
+# Start development servers in separate terminals
 npm run dev:server  # Terminal 1: Server on port 4000
 npm run dev:client  # Terminal 2: Client on port 3000
 ```
