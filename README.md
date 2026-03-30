@@ -172,6 +172,9 @@ For detailed information about the initial development phase, decisions made, an
 ### Next Phase
 For the upcoming development plan focusing on real audio processing and enhanced UI, see the [Next Phase Plan](docs/NEXT_PHASE.md).
 
+### Coding Agent Guidelines
+For agentic coding agents (like Cursor, Copilot, etc.), see the [AGENTS.md](AGENTS.md) file with build/lint/test commands and code style guidelines.
+
 ## Contributing
 
 Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
