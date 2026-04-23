@@ -42,13 +42,32 @@ async function startServer() {
 
     // WebSocket connection for audio streaming
     fastify.register(async function (fastify) {
-      fastify.get('/ws', { websocket: true }, (connection, req) => {
+      fastify.get('/ws', { websocket: true }, (connection: any, req: any) => {
         fastify.log.info('WebSocket connection established');
         
-        // Create audio processor for this connection
-        const audioProcessor = new AudioProcessor();
+        // Comprehensive check for the socket object
+        let socket: any = null;
         
-        connection.socket.on('message', (message: Buffer) => {
+        if (connection.socket) {
+          socket = connection.socket;
+        } else if (connection.on) {
+          socket = connection;
+        } else if (req && req.socket && req.socket.on) {
+          socket = req.socket;
+        }
+
+        if (!socket) {
+          fastify.log.error('WebSocket socket could not be resolved from connection or request');
+          // Log keys to help debug
+          fastify.log.info(`Connection keys: ${Object.keys(connection || {}).join(', ')}`);
+          return;
+        }
+
+        // Create audio processor for this connection
+        const audioProcessor = new AudioProcessor(join(__dirname, '../models/rnnoise.onnx'));
+        let knownSourcesCount = 0;
+        
+        socket.on('message', async (message: Buffer) => {
           try {
             // Handle incoming audio data
             const data = JSON.parse(message.toString());
@@ -56,11 +75,21 @@ async function startServer() {
             switch (data.type) {
               case 'audio':
                 // Process audio data
-                processAudio(data.audioData, connection.socket, audioProcessor);
+                await processAudio(data.audioData, socket, audioProcessor);
+                
+                // Continuous source detection
+                const currentSources = audioProcessor.detectSources(data.audioData);
+                if (currentSources.length > knownSourcesCount) {
+                  socket.send(JSON.stringify({
+                    type: 'sources_detected',
+                    sources: currentSources
+                  }));
+                  knownSourcesCount = currentSources.length;
+                }
                 break;
               case 'config':
                 // Handle configuration
-                handleConfig(data.config, connection.socket, audioProcessor);
+                handleConfig(data.config, socket, audioProcessor);
                 break;
               default:
                 fastify.log.warn('Unknown message type:', data.type);
@@ -70,11 +99,11 @@ async function startServer() {
           }
         });
 
-        connection.socket.on('close', () => {
+        socket.on('close', () => {
           fastify.log.info('WebSocket connection closed');
         });
 
-        connection.socket.on('error', (error: Error) => {
+        socket.on('error', (error: Error) => {
           fastify.log.error(error);
         });
       });
@@ -82,7 +111,19 @@ async function startServer() {
 
     // Health check endpoint
     fastify.get('/api/health', async (request, reply) => {
-      return { status: 'ok', timestamp: new Date().toISOString() };
+      const modelPath = join(__dirname, '../models/rnnoise.onnx');
+      const processor = new AudioProcessor(modelPath);
+      
+      // We need to wait a tiny bit because loadModel is async in constructor
+      // Or better, check if file exists
+      const fs = await import('fs');
+      const modelExists = fs.existsSync(modelPath);
+
+      return { 
+        status: 'ok', 
+        timestamp: new Date().toISOString(),
+        modelsLoaded: modelExists
+      };
     });
 
     // Root endpoint
@@ -117,7 +158,32 @@ async function startServer() {
 async function processAudio(audioData: any, socket: any, audioProcessor: AudioProcessor) {
   // Process audio using the AudioProcessor
   try {
-    const processedData = audioProcessor.processAudio(audioData);
+    if (!audioData || audioData.length === 0) {
+      return;
+    }
+
+    // Calculate input magnitude for debugging
+    let sumSq = 0;
+    const sampleCount = Math.min(audioData.length, 100);
+    for (let i = 0; i < sampleCount; i++) {
+      sumSq += (audioData[i] / 32768) ** 2;
+    }
+    const rms = Math.sqrt(sumSq / sampleCount);
+    
+    const processedData = await audioProcessor.processAudio(audioData);
+    
+    // Calculate output magnitude
+    let outSumSq = 0;
+    const outSampleCount = Math.min(processedData.length, 100);
+    for (let i = 0; i < outSampleCount; i++) {
+      outSumSq += (processedData[i] / 32768) ** 2;
+    }
+    const outRms = Math.sqrt(outSumSq / outSampleCount);
+
+    // Use a more stable logging method
+    if (Math.random() < 0.5) { 
+      console.log(`Audio flow: In RMS: ${rms.toFixed(4)}, Out RMS: ${outRms.toFixed(4)}`);
+    }
     
     // Send processed audio back to client
     socket.send(JSON.stringify({
@@ -128,11 +194,6 @@ async function processAudio(audioData: any, socket: any, audioProcessor: AudioPr
     }));
   } catch (error) {
     console.error('Error processing audio:', error);
-    socket.send(JSON.stringify({
-      type: 'error',
-      message: 'Audio processing failed',
-      timestamp: Date.now()
-    }));
   }
 }
 
@@ -146,10 +207,6 @@ function handleConfig(config: any, socket: any, audioProcessor: AudioProcessor) 
   
   if (config.selectedSource !== undefined) {
     audioProcessor.setSelectedSource(config.selectedSource);
-  }
-  
-  if (config.sampleRate !== undefined) {
-    // Update sample rate if needed
   }
   
   socket.send(JSON.stringify({

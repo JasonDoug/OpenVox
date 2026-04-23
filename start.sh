@@ -136,7 +136,7 @@ cd "$SERVER_DIR"
 PORT=$SERVER_PORT npm run dev > "$SCRIPT_DIR/server.log" 2>&1 &
 SERVER_PID=$!
 echo $SERVER_PID > "$PID_DIR/server.pid"
-echo -e "${GREEN}Server started (PID: $SERVER_PORT)${NC}"
+echo -e "${GREEN}Server started (PID: $SERVER_PID)${NC}"
 
 # Wait a moment for server to initialize
 sleep 3
@@ -183,9 +183,7 @@ echo ""
 echo -e "To stop servers, run: ${YELLOW}./stop.sh${NC}"
 echo ""
 
-# Show recent log entries
-echo -e "${YELLOW}Recent server log:${NC}"
-tail -5 "$SCRIPT_DIR/server.log" 2>/dev/null || echo "No server log yet"
-echo ""
-echo -e "${YELLOW}Recent client log:${NC}"
-tail -5 "$SCRIPT_DIR/client.log" 2>/dev/null || echo "No client log yet"
+# Show recent log entries and start streaming
+echo -e "${YELLOW}Streaming logs (Press Ctrl+C to stop, servers will keep running):${NC}"
+echo -e "${BLUE}--- Server & Client Logs ---${NC}"
+tail -f "$SCRIPT_DIR/server.log" "$SCRIPT_DIR/client.log"

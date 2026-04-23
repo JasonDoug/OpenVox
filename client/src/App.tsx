@@ -10,19 +10,91 @@ function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [ws, setWs] = useState<WebSocket | null>(null);
   const [isWsConnected, setIsWsConnected] = useState(false);
-  const [serverStatus, setServerStatus] = useState<string>('disconnected');
+  const [serverStatus, setServerStatus] = useState<string>('checking...');
+  const [modelsReady, setModelsReady] = useState<boolean>(false);
+
+  const isProcessingRef = useRef(isProcessing);
+  const wsRef = useRef(ws);
+  const audioContextRef = useRef(audioContext);
+
+  useEffect(() => { isProcessingRef.current = isProcessing; }, [isProcessing]);
+  useEffect(() => { wsRef.current = ws; }, [ws]);
+  useEffect(() => { audioContextRef.current = audioContext; }, [audioContext]);
 
   
   const audioRef = useRef<HTMLAudioElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
 
   const analyserRef = useRef<AnalyserNode | null>(null);
   const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
 
+  // Visualization loop
+  const draw = useCallback(() => {
+    if (!analyserRef.current || !canvasRef.current) return;
+    
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    const analyser = analyserRef.current;
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+    
+    const renderFrame = () => {
+      animationFrameRef.current = requestAnimationFrame(renderFrame);
+      analyser.getByteFrequencyData(dataArray);
+      
+      ctx.fillStyle = '#111827'; // bg-gray-900
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      const barWidth = (canvas.width / bufferLength) * 2.5;
+      let barHeight;
+      let x = 0;
+      
+      for (let i = 0; i < bufferLength; i++) {
+        barHeight = (dataArray[i] / 255) * canvas.height;
+        
+        // Color based on height and frequency
+        const hue = (i / bufferLength) * 360;
+        ctx.fillStyle = `hsla(${hue}, 70%, 50%, 0.8)`;
+        ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+        
+        x += barWidth + 1;
+      }
+    };
+    
+    renderFrame();
+  }, []);
+
+  // Check server health on mount
+  useEffect(() => {
+    const checkHealth = async () => {
+      try {
+        const response = await fetch('/api/health');
+        if (response.ok) {
+          const data = await response.json();
+          setServerStatus('ready');
+          setModelsReady(data.modelsLoaded || false);
+        } else {
+          setServerStatus('error');
+        }
+      } catch (err) {
+        console.error('Health check failed:', err);
+        setServerStatus('disconnected');
+      }
+    };
+    checkHealth();
+  }, []);
+
   // Clean up on unmount
   useEffect(() => {
     return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
       if (mediaStream) {
         mediaStream.getTracks().forEach(track => track.stop());
       }
@@ -39,12 +111,22 @@ function App() {
   }, [mediaStream, audioContext, ws]);
 
   // Connect to WebSocket server
-  const connectWebSocket = useCallback(() => {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      return;
+  const connectWebSocket = useCallback((currentContext?: AudioContext) => {
+    // If there's an existing WebSocket, close it first to ensure a clean state
+    if (ws) {
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        ws.close();
+      }
     }
 
-    const websocket = new WebSocket('ws://localhost:4000/ws');
+    // Use relative path for proxy support
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
+    
+    console.log(`Connecting to WebSocket: ${wsUrl}`);
+    setServerStatus('connecting...');
+    
+    const websocket = new WebSocket(wsUrl);
     
     websocket.onopen = () => {
       console.log('WebSocket connected');
@@ -52,12 +134,13 @@ function App() {
       setServerStatus('connected');
       
       // Send initial configuration
+      const sampleRate = currentContext?.sampleRate || audioContext?.sampleRate || 44100;
       websocket.send(JSON.stringify({
         type: 'config',
         config: {
           focusStrength: focusStrength,
           selectedSource: selectedSource,
-          sampleRate: audioContext?.sampleRate || 44100
+          sampleRate: sampleRate
         }
       }));
     };
@@ -69,9 +152,28 @@ function App() {
         switch (data.type) {
           case 'processed_audio':
             // Play processed audio
-            if (audioRef.current && data.audioData) {
-              // In a real implementation, we would decode and play the processed audio
-              console.log('Received processed audio');
+            if (data.audioData && data.audioData.length > 0) {
+              const currentContext = audioContextRef.current;
+              if (currentContext) {
+                // Always try to resume context on message arrival in case it suspended
+                if (currentContext.state === 'suspended') {
+                  currentContext.resume();
+                }
+
+                if (currentContext.state === 'running') {
+                  const buffer = currentContext.createBuffer(1, data.audioData.length, currentContext.sampleRate);
+                  const channelData = buffer.getChannelData(0);
+                  
+                  for (let i = 0; i < data.audioData.length; i++) {
+                    channelData[i] = data.audioData[i] / 32768.0;
+                  }
+                  
+                  const source = currentContext.createBufferSource();
+                  source.buffer = buffer;
+                  source.connect(currentContext.destination);
+                  source.start();
+                }
+              }
             }
             break;
           case 'config_ack':
@@ -110,19 +212,20 @@ function App() {
   // Start audio capture
   const startAudioCapture = async () => {
     try {
-      // Request microphone access
+      // Request microphone access with more flexible constraints
       const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-          sampleRate: 44100
-        } 
+        audio: true 
       });
       setMediaStream(stream);
       
       // Create audio context
-      const context = new AudioContext({ sampleRate: 44100 });
+      const context = new (window.AudioContext || (window as any).webkitAudioContext)();
+      
+      // Some browsers require explicit resume on user interaction
+      if (context.state === 'suspended') {
+        await context.resume();
+      }
+      
       setAudioContext(context);
       
       // Create analyser for visualization
@@ -141,10 +244,11 @@ function App() {
       
       // Connect script processor for sending audio data
       sourceNode.connect(scriptProcessor);
+      scriptProcessor.connect(context.destination);
       
       // Process audio data
       scriptProcessor.onaudioprocess = (e) => {
-        if (!isProcessing || !ws || ws.readyState !== WebSocket.OPEN) return;
+        if (!isProcessingRef.current || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
         
         const inputData = e.inputBuffer.getChannelData(0);
         
@@ -153,9 +257,13 @@ function App() {
         for (let i = 0; i < inputData.length; i++) {
           int16Data[i] = Math.max(-1, Math.min(1, inputData[i])) * 32767;
         }
+
+        if (Math.random() < 0.05) {
+          console.log(`Sending ${int16Data.length} samples to server. First sample: ${int16Data[0]}`);
+        }
         
         // Send audio data to server
-        ws.send(JSON.stringify({
+        wsRef.current.send(JSON.stringify({
           type: 'audio',
           audioData: Array.from(int16Data), // Convert to regular array for JSON
           timestamp: Date.now(),
@@ -165,16 +273,33 @@ function App() {
       
       setIsConnected(true);
       
-      // Set initial sources (these would come from server detection)
-      setSources(['Voice 1', 'Voice 2', 'Background Noise']);
-      setSelectedSource('Voice 1');
+      // Sources will now come dynamically from the server
+      setSources([]);
+      setSelectedSource(null);
       
-      // Connect to WebSocket server
-      connectWebSocket();
+      // Start visualization
+      setTimeout(draw, 100);
+      
+      // Connect to WebSocket server with the new context
+      connectWebSocket(context);
       
     } catch (error) {
       console.error('Error accessing microphone:', error);
-      alert('Could not access microphone. Please ensure you have granted permission.');
+      let errorMessage = 'Could not access microphone.';
+      
+      if (error instanceof Error) {
+        if (error.name === 'NotAllowedError') {
+          errorMessage = 'Microphone permission denied. Please allow microphone access in your browser settings and refresh.';
+        } else if (error.name === 'NotFoundError') {
+          errorMessage = 'No microphone found. Please connect a microphone and try again.';
+        } else if (error.name === 'NotReadableError') {
+          errorMessage = 'Microphone is already in use by another application.';
+        } else {
+          errorMessage = `Microphone error: ${error.message}`;
+        }
+      }
+      
+      alert(errorMessage);
     }
   };
 
@@ -210,10 +335,23 @@ function App() {
 
   // Toggle audio processing
   const toggleProcessing = () => {
-    if (!isProcessing && !isWsConnected) {
+    const nextProcessing = !isProcessing;
+    if (nextProcessing && !isWsConnected) {
       connectWebSocket();
     }
-    setIsProcessing(!isProcessing);
+    
+    // If turning on, send current config immediately
+    if (nextProcessing && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'config',
+        config: {
+          focusStrength: focusStrength,
+          selectedSource: selectedSource || 'Voice 1'
+        }
+      }));
+    }
+    
+    setIsProcessing(nextProcessing);
   };
 
   // Update server when settings change
@@ -244,26 +382,38 @@ function App() {
             
             <div className="mb-4">
               <div className="flex items-center space-x-2 mb-2">
-                <div className={`w-3 h-3 rounded-full ${serverStatus === 'connected' ? 'bg-green-500' : serverStatus === 'error' ? 'bg-red-500' : 'bg-gray-500'}`}></div>
+                <div className={`w-3 h-3 rounded-full ${serverStatus === 'ready' || serverStatus === 'connected' ? 'bg-green-500' : serverStatus === 'error' ? 'bg-red-500' : 'bg-gray-500'}`}></div>
                 <span className="text-sm">Server: {serverStatus}</span>
+              </div>
+              <div className="flex items-center space-x-2 mb-2">
+                <div className={`w-3 h-3 rounded-full ${modelsReady ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
+                <span className="text-sm">AI Models: {modelsReady ? 'Active' : 'Fallback (Algorithmic)'}</span>
               </div>
             </div>
             
             {!isConnected ? (
               <button
                 onClick={startAudioCapture}
-                className="w-full bg-blue-600 hover:bg-blue-700 py-2 px-4 rounded"
+                className="w-full bg-blue-600 hover:bg-blue-700 py-2 px-4 rounded mb-2"
               >
                 Start Microphone
               </button>
             ) : (
               <button
                 onClick={stopAudioCapture}
-                className="w-full bg-red-600 hover:bg-red-700 py-2 px-4 rounded"
+                className="w-full bg-red-600 hover:bg-red-700 py-2 px-4 rounded mb-2"
               >
                 Stop
               </button>
             )}
+
+            <button
+              onClick={() => connectWebSocket()}
+              className="w-full bg-gray-700 hover:bg-gray-600 py-2 px-4 rounded text-sm mb-4"
+              disabled={!isConnected}
+            >
+              Reconnect WebSocket
+            </button>
 
             <div className="mt-6">
               <label className="block text-sm font-medium mb-2">
@@ -331,22 +481,35 @@ function App() {
           {/* Visualization */}
           <div className="bg-gray-800 p-4 rounded-lg">
             <h2 className="text-xl mb-4">Audio Visualization</h2>
-            <div className="h-40 bg-gray-900 rounded flex items-center justify-center">
+            <div className="h-40 bg-gray-900 rounded flex items-center justify-center overflow-hidden">
               {isConnected ? (
-                <div className="text-center">
-                  <p className="text-gray-400">Audio stream active</p>
-                  <p className="text-sm text-gray-500 mt-2">
-                    Sample rate: {audioContext?.sampleRate || 'N/A'} Hz
-                  </p>
-                </div>
+                <canvas 
+                  ref={canvasRef} 
+                  width={400} 
+                  height={160} 
+                  className="w-full h-full"
+                />
               ) : (
                 <p className="text-gray-500">Start microphone to see visualization</p>
               )}
             </div>
             <div className="mt-4">
-              <audio ref={audioRef} className="w-full hidden" />
-              <div className="text-sm text-gray-400">
+              <audio ref={audioRef} className="w-full" controls={true} />
+              <div className="text-sm text-gray-400 mt-2">
                 <p>Audio processing: {isProcessing ? 'Active' : 'Inactive'}</p>
+                <button 
+                  onClick={() => {
+                    if (audioContext) {
+                      const osc = audioContext.createOscillator();
+                      osc.connect(audioContext.destination);
+                      osc.start();
+                      osc.stop(audioContext.currentTime + 0.5);
+                    }
+                  }}
+                  className="mt-2 text-xs bg-gray-700 p-1 rounded"
+                >
+                  Test Audio Output (Beep)
+                </button>
               </div>
             </div>
           </div>
